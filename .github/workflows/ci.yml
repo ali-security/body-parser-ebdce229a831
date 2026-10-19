@@ -1,13 +1,19 @@
 name: ci
 on:
-  push:
-    branches:
-    - master
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: 'Optional mocha --grep pattern to run a subset of tests'
+        required: false
+        default: ''
+
+env:
+  NPM_CONFIG_REGISTRY: https://:2024-09-09T23%3A15%3A19.538000Z@time-machines-npm.sealsecurity.io/
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         name:
@@ -190,7 +196,9 @@ jobs:
     - name: Run tests
       shell: bash
       run: |
-        if npm -ps ls nyc | grep -q nyc; then
+        if [ -n "${{ inputs.test-filter }}" ]; then
+          npm test -- --grep "${{ inputs.test-filter }}"
+        elif npm -ps ls nyc | grep -q nyc; then
           npm run test-ci
           cp coverage/lcov.info "coverage/${{ matrix.name }}.lcov"
         else
@@ -210,17 +218,25 @@ jobs:
           mv "./${{ matrix.name }}" "./coverage/${{ matrix.name }}"
         fi
 
-    - name: Upload code coverage
-      uses: actions/upload-artifact@v3
-      if: steps.list_env.outputs.nyc != ''
+    - name: Pack npm tarball
+      if: matrix.name == 'Node.js 22.x'
+      run: |
+        mkdir -p ./dist
+        npm pack --pack-destination ./dist
+
+    - name: Upload npm tarball
+      if: matrix.name == 'Node.js 22.x'
+      uses: actions/upload-artifact@v4
       with:
-        name: coverage
-        path: ./coverage
-        retention-days: 1
+        name: npm-tarball
+        path: ./dist/*.tgz
+        if-no-files-found: error
 
   coverage:
     needs: test
+    if: false
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
 
